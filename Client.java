@@ -27,6 +27,7 @@ public class Client implements AutoCloseable{
     private static final String EXCHANGE_PRIVATE = "directTopic";
     private static final String EXCHANGE_SERVER = "serverTopic";
     private static final String SERVER_QUEUE = "serverQueue";
+    private static final String ONLINE_CHECK = "onlineQueue";
 
 
 
@@ -56,13 +57,24 @@ public class Client implements AutoCloseable{
         try(Client client = new Client()){
             client.username = client.decideUsername();
             System.out.println("My name is "+ client.username);
+
+            while(){
+                long timeAtLoopStart = System.currentTimeMillis();
+                while(System.currentTimeMillis()-timeAtLoopStart>500){
+                    
+                }
+                client.sendOnlineStatus(client.username);
+            }
+
         }catch(IOException | TimeoutException | InterruptedException e){
             e.printStackTrace();
         }
 
     }
 
-
+    private void sendOnlineStatus(String username) throws IOException, InterruptedException {
+        channel.basicPublish("", ONLINE_CHECK, MessageProperties.PERSISTENT_TEXT_PLAIN,username.getBytes("UTF-8"));
+    }
 
     private String decideUsername() throws IOException, InterruptedException {
         //Set the username before loop
