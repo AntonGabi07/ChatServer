@@ -32,18 +32,11 @@ public class Client implements AutoCloseable{
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost("localhost");
 
-
-
         connection = factory.newConnection();
         channel = connection.createChannel();
 
-
-
         channel.exchangeDeclare(EXCHANGE_ROOM, "topic");
         channel.exchangeDeclare(EXCHANGE_PRIVATE, "direct");
-
-
-
         channel.exchangeDeclare(EXCHANGE_SERVER, "topic");
     }
 
@@ -57,8 +50,9 @@ public class Client implements AutoCloseable{
 
             while(true){
                 long timeAtLoopStart = System.currentTimeMillis();
-                while(System.currentTimeMillis()-timeAtLoopStart>500){
-                    
+                long currentTime = System.currentTimeMillis();
+                while(currentTime-timeAtLoopStart < 500){
+                    currentTime = System.currentTimeMillis();
                 }
                 client.sendOnlineStatus(client.username);
             }

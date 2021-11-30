@@ -6,15 +6,26 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.concurrent.TimeoutException;
+import java.util.Timer;
+import java.util.TimerTask;
 
 
 
 public class Server implements AutoCloseable {
 
+    class User {
+        public String username;
+        public long timestamp;
 
+        User(String username, long timestamp){
+            this.username=username;
+            this.timestamp=timestamp;
+        }
+    }
     private Connection connection;
     private Channel channel;
-    private static ArrayList<String> userList = new ArrayList<String>();
+    private static ArrayList<User> userList = new ArrayList<User>();
+    Timer timer = new Timer();
 
 
 
@@ -38,10 +49,17 @@ public class Server implements AutoCloseable {
 
 
     public static void main(String[] args) throws Exception {
+        
         try(Server server = new Server()){
             System.out.println(" [x] Awaiting RPC requests");
 
-
+            server.timer.scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    System.out.println("Hello "+System.currentTimeMillis()+".");
+                    server.verifyUsersStatus();
+                }
+            },0, 1000);
 
             Object monitor = new Object();
             DeliverCallback deliverCallback = (consumerTag, delivery) -> {
@@ -69,7 +87,7 @@ public class Server implements AutoCloseable {
             DeliverCallback onlineCallback = (consumerTag, delivery) -> {
                 String message = new String(delivery.getBody(), "UTF-8");
                 try {
-                    server.verifyUsers(message);
+                    server.verifyUser(message);
                 } finally {
                     server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
                 }
@@ -77,6 +95,7 @@ public class Server implements AutoCloseable {
 
             server.channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
             server.channel.basicConsume(SERVER_QUEUE, false, deliverCallback, (consumerTag -> { }));
+
             // Wait and be prepared to consume the message from RPC client.
             while (true) {
                 synchronized (monitor) {
@@ -88,20 +107,34 @@ public class Server implements AutoCloseable {
                 }
             }
         }
+        
     }
+
+    protected void verifyUsersStatus() {
+        for(User u : userList)
+            if(System.currentTimeMillis()-u.timestamp > 1000){
+                userList.remove(u);
+                break;
+            }
+    }
+
+
     private String verifyUsername(String username){
         Boolean verify = userList.contains(username);
         if(verify){
             return "false";
         }
-        userList.add(username);
+        userList.add(new User(username,System.currentTimeMillis()));
         return "true";
     }
 
-    private static void verifyUsers(String username) {
-        for(String u : userList){
-            if(u.equals(username)){
-                System.out.println("My name is "+u+" and I'm online." + System.currentTimeMillis());
+    private static void verifyUser(String username) {
+        long currentTime = System.currentTimeMillis();
+        for(User u : userList){
+            if(u.username.equals(username)){
+                u.timestamp = currentTime;
+                System.out.println("My name is "+u.username+" / "+u.timestamp);
+                break;
             }
         }
     }
@@ -109,5 +142,6 @@ public class Server implements AutoCloseable {
     @Override
     public void close() throws Exception {
         connection.close();
+        timer.cancel();
     }
 }
