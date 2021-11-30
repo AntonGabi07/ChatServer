@@ -66,16 +66,16 @@ public class Server implements AutoCloseable {
                 }
             };
 
-            DeliverCallback onlineCallback = = (consumerTag, delivery) -> {
+            DeliverCallback onlineCallback = (consumerTag, delivery) -> {
                 String message = new String(delivery.getBody(), "UTF-8");
                 try {
                     server.verifyUsers(message);
                 } finally {
-                    channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                    server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
                 }
             };
 
-            channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
+            server.channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
             server.channel.basicConsume(SERVER_QUEUE, false, deliverCallback, (consumerTag -> { }));
             // Wait and be prepared to consume the message from RPC client.
             while (true) {

@@ -1,7 +1,4 @@
-import com.rabbitmq.client.AMQP;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
+import com.rabbitmq.client.*;
 
 
 import java.io.IOException;
@@ -58,7 +55,7 @@ public class Client implements AutoCloseable{
             client.username = client.decideUsername();
             System.out.println("My name is "+ client.username);
 
-            while(){
+            while(true){
                 long timeAtLoopStart = System.currentTimeMillis();
                 while(System.currentTimeMillis()-timeAtLoopStart>500){
                     
