@@ -30,6 +30,7 @@ public class Server implements AutoCloseable {
     private static final String SERVER_QUEUE = "serverQueue";
     private static final String ONLINE_CHECK = "onlineQueue";
     private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
+    private static final String SHOW_ONLINE= "showOnline";
 
 
 
@@ -46,6 +47,8 @@ public class Server implements AutoCloseable {
         channel.queuePurge(ONLINE_CHECK);
         channel.queueDeclare(PRIVATE_CHECK_ONLINE, false, false, false, null);
         channel.queuePurge(PRIVATE_CHECK_ONLINE);
+        channel.queueDeclare(SHOW_ONLINE, false, false, false, null);
+        channel.queuePurge(SHOW_ONLINE);
         channel.basicQos(1);
     }
 
@@ -119,9 +122,30 @@ public class Server implements AutoCloseable {
                 }
             };
 
-            
+            Object monitor3 = new Object();
+            DeliverCallback showOnlineCallback = (consumerTag, delivery) -> {
+                AMQP.BasicProperties replyProps = new AMQP.BasicProperties
+                        .Builder()
+                        .correlationId(delivery.getProperties().getCorrelationId())
+                        .build();
+                String response = "";
+                try {
+                    String username = new String(delivery.getBody(), "UTF-8");
+                    response += server.getOnlineList(username);
+                } catch (RuntimeException e) {
+                    System.out.println(" [ERROR] " + e.toString());
+                } finally {
+                    server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
+                    server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                    // RabbitMq consumer worker thread notifies the RPC server owner thread
+                    synchronized (monitor3) {
+                        monitor3.notify();
+                    }
+                }
+            };
 
             server.channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
+            server.channel.basicConsume(SHOW_ONLINE, false, showOnlineCallback, consumerTag -> { });
             server.channel.basicConsume(SERVER_QUEUE, false, usernameCallback, (consumerTag -> { }));
             server.channel.basicConsume(PRIVATE_CHECK_ONLINE, false, privateCallback, (consumerTag -> { }));
 
@@ -137,6 +161,13 @@ public class Server implements AutoCloseable {
                 synchronized (monitor2) {
                     try {
                         monitor2.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                synchronized (monitor3) {
+                    try {
+                        monitor3.wait();
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
@@ -193,6 +224,14 @@ public class Server implements AutoCloseable {
                 break;
             }
         }
+    }
+
+    private static String getOnlineList(String user){
+        String usersOnline = "These are the online users:\n";
+        for(User u : userList){
+            usersOnline+=("\t"+(u.username.equals(user)?"You":u.username)+"\n");
+        }
+        return usersOnline;
     }
 
     @Override

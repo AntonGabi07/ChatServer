@@ -30,6 +30,7 @@ public class Client implements AutoCloseable{
     private static final String SERVER_QUEUE = "serverQueue"; //used to connect to server; verify name uniqueness
     private static final String ONLINE_CHECK = "onlineQueue"; //used to send pings once every 500 ms
     private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
+    private static final String SHOW_ONLINE= "showOnline";
 
 
 
@@ -93,6 +94,10 @@ public class Client implements AutoCloseable{
                             else 
                                 client.sendPrivateMessage(params[2], params[1]);
                             break;
+                        case 'o':
+                            client.getOnlineList(client.username);
+                            break;
+
                     }
                 }else{
                     System.out.println("Unknown command: \n");
@@ -106,6 +111,34 @@ public class Client implements AutoCloseable{
         }
 
     }
+
+    private void getOnlineList(String user) throws IOException, InterruptedException {
+        final String corrId = UUID.randomUUID().toString();
+        String replyQueueName = channel.queueDeclare().getQueue();
+        AMQP.BasicProperties props = new AMQP.BasicProperties
+                .Builder()
+                .correlationId(corrId)
+                .replyTo(replyQueueName)
+                .build();
+        channel.basicPublish("", SHOW_ONLINE, props, user.getBytes("UTF-8"));
+
+        final BlockingQueue<String> response = new ArrayBlockingQueue<>(1);
+
+        String ctag = channel.basicConsume(replyQueueName, true, (consumerTag, delivery) -> {
+            if (delivery.getProperties().getCorrelationId().equals(corrId)) {
+                response.offer(new String(delivery.getBody(), "UTF-8"));
+            }
+        }, consumerTag -> {
+        });
+
+        String onlineList = response.take();
+        channel.basicCancel(ctag);
+
+        System.out.println(onlineList);
+    }
+
+
+
 
     private void sendOnlineStatus(String username) throws IOException, InterruptedException {
         channel.basicPublish("", ONLINE_CHECK, MessageProperties.PERSISTENT_TEXT_PLAIN,username.getBytes("UTF-8"));
@@ -193,6 +226,7 @@ public class Client implements AutoCloseable{
 
     private static void helpDisplay(){
         System.out.println("******************** HELP ********************");
+        System.out.println("*  --o                  : Show online users  *");
         System.out.println("*  --b <message>        : Broadcast message  *");
         System.out.println("*  --p <name> <message> : Private message    *");
         System.out.println("*  --q                  : Leave the chat     *");
