@@ -1,5 +1,3 @@
-
-
 import com.rabbitmq.client.*;
 
 
@@ -31,6 +29,7 @@ public class Client implements AutoCloseable{
     private static final String ONLINE_CHECK = "onlineQueue"; //used to send pings once every 500 ms
     private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
     private static final String SHOW_ONLINE= "showOnline";
+    private static final String CREATE_TOPIC= "createTopic";
 
 
 
@@ -94,6 +93,9 @@ public class Client implements AutoCloseable{
                             else 
                                 client.sendPrivateMessage(params[2], params[1]);
                             break;
+                        case 't':
+                            client.sendCreateTopic(message);
+                            break;
                         case 'o':
                             client.getOnlineList(client.username);
                             break;
@@ -110,6 +112,11 @@ public class Client implements AutoCloseable{
             e.printStackTrace();
         }
 
+    }
+
+    private void sendCreateTopic(String str)throws IOException, InterruptedException{
+        channel.basicPublish("", CREATE_TOPIC, MessageProperties.PERSISTENT_TEXT_PLAIN,str.getBytes("UTF-8"));
+        
     }
 
     private void getOnlineList(String user) throws IOException, InterruptedException {
@@ -225,12 +232,14 @@ public class Client implements AutoCloseable{
     }
 
     private static void helpDisplay(){
-        System.out.println("******************** HELP ********************");
-        System.out.println("*  --o                  : Show online users  *");
-        System.out.println("*  --b <message>        : Broadcast message  *");
-        System.out.println("*  --p <name> <message> : Private message    *");
-        System.out.println("*  --q                  : Leave the chat     *");
-        System.out.println("**********************************************\n");
+        System.out.println("********************  HELP  ********************");
+        System.out.println("***** Timer for topic duration is optional *****");
+        System.out.println("*  --o                    : Show online users  *");
+        System.out.println("*  --t <name> <duration>  : Create a topic     *");
+        System.out.println("*  --b <message>          : Broadcast message  *");
+        System.out.println("*  --p <name> <message>   : Private message    *");
+        System.out.println("*  --q                    : Leave the chat     *");
+        System.out.println("************************************************\n");
     }
 
     public void close() throws IOException {

@@ -20,17 +20,49 @@ class User {
     }
 }
 
+class Topic {
+    public String topicName;
+    private ArrayList<String> messages = new ArrayList<String>();
+    long timestamp;
+    long duration = 5*60*1000;
+
+    public Topic(String topicName, long timestamp){
+        this.topicName = topicName;
+        this.timestamp = timestamp;
+    }
+
+    public Topic(String topicName, long timestamp,long duration){
+        this.topicName = topicName;
+        this.timestamp = timestamp;
+        this.duration = duration * 60*1000;
+    }
+
+    public String toString(){
+        String result = "Topic "+topicName + ":\n";
+        for(String s : messages){
+            result+= (s+"\n");
+        }
+        return result;
+    }
+
+    public void add(String message){
+        messages.add(message);
+    }
+}
+
 public class Server implements AutoCloseable {
 
     private Connection connection;
     private Channel channel;
     private static ArrayList<User> userList = new ArrayList<User>();
+    private static ArrayList<Topic> topics = new ArrayList<Topic>();
     Timer timer = new Timer();
 
     private static final String SERVER_QUEUE = "serverQueue";
     private static final String ONLINE_CHECK = "onlineQueue";
     private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
     private static final String SHOW_ONLINE= "showOnline";
+    private static final String CREATE_TOPIC= "createTopic";
 
 
 
@@ -49,6 +81,8 @@ public class Server implements AutoCloseable {
         channel.queuePurge(PRIVATE_CHECK_ONLINE);
         channel.queueDeclare(SHOW_ONLINE, false, false, false, null);
         channel.queuePurge(SHOW_ONLINE);
+        channel.queueDeclare(CREATE_TOPIC, false, false, false, null);
+        channel.queuePurge(CREATE_TOPIC);
         channel.basicQos(1);
     }
 
@@ -144,10 +178,20 @@ public class Server implements AutoCloseable {
                 }
             };
 
+            DeliverCallback createTopicCallback = (consumerTag, delivery) -> {
+                String message = new String(delivery.getBody(), "UTF-8");
+                try {
+                    server.createTopic(message);
+                } finally {
+                    server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                }
+            };
+
             server.channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
+            server.channel.basicConsume(SERVER_QUEUE, false, usernameCallback, consumerTag -> { });
             server.channel.basicConsume(SHOW_ONLINE, false, showOnlineCallback, consumerTag -> { });
-            server.channel.basicConsume(SERVER_QUEUE, false, usernameCallback, (consumerTag -> { }));
-            server.channel.basicConsume(PRIVATE_CHECK_ONLINE, false, privateCallback, (consumerTag -> { }));
+            server.channel.basicConsume(CREATE_TOPIC, false, createTopicCallback, consumerTag -> { });
+            server.channel.basicConsume(PRIVATE_CHECK_ONLINE, false, privateCallback, consumerTag -> { });
 
             // Wait and be prepared to consume the message from RPC client.
             while (true) {
@@ -175,6 +219,22 @@ public class Server implements AutoCloseable {
             }
         }
         
+    }
+
+    private void createTopic(String arguments){
+        String[] args = arguments.split(" ",3);
+        for(Topic t : topics){
+            if(t.topicName.equals(args[1])){
+                System.out.println("Topic " +args[1]+ " exists.");
+                return;
+            }
+        }
+        if(args.length == 3){
+            topics.add(new Topic(args[1],System.currentTimeMillis(),Integer.valueOf(args[2])));
+        }else if(args.length == 2){
+            topics.add(new Topic(args[1],System.currentTimeMillis()));
+        }
+        System.out.println("Created a topic named " + args[1]+".");
     }
 
     protected void verifyUsersStatus() {
