@@ -33,9 +33,7 @@ public class Client implements AutoCloseable{
     private static final String CREATE_TOPIC= "createTopic";
     private static final String SEND_TO_TOPIC= "sendMessageToTopic";
     private static final String GET_TOPIC = "getTopicMessages";
-
-
-
+    private static final String LIST_TOPICS = "listTopics";
 
     public Client() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
@@ -46,9 +44,6 @@ public class Client implements AutoCloseable{
 
         channel.exchangeDeclare(EXCHANGE_PRIVATE, "direct");
     }
-
-
-
 
     public static void main(String[] args) throws Exception {
         try(Client client = new Client()){
@@ -118,6 +113,9 @@ public class Client implements AutoCloseable{
                         case 's':
                             client.showTopicMessages(message);
                             break;
+                        case 'l':
+                            client.listTopics();
+                            break;
                         default:
                             System.out.println("Unknown command: ");
                             System.out.println("\t: "+message.split(" ")[0]);
@@ -138,7 +136,32 @@ public class Client implements AutoCloseable{
 
     }
 
-    private void showTopicMessages(String message)  throws IOException, InterruptedException {
+    private void listTopics() throws IOException, InterruptedException {
+        final String corrId = UUID.randomUUID().toString();
+        String replyQueueName = channel.queueDeclare().getQueue();
+        AMQP.BasicProperties props = new AMQP.BasicProperties
+                .Builder()
+                .correlationId(corrId)
+                .replyTo(replyQueueName)
+                .build();
+        channel.basicPublish("", LIST_TOPICS, props, "".getBytes("UTF-8"));
+
+        final BlockingQueue<String> response = new ArrayBlockingQueue<>(1);
+
+        String ctag = channel.basicConsume(replyQueueName, true, (consumerTag, delivery) -> {
+            if (delivery.getProperties().getCorrelationId().equals(corrId)) {
+                response.offer(new String(delivery.getBody(), "UTF-8"));
+            }
+        }, consumerTag -> {
+        });
+
+        String topics = response.take();
+        channel.basicCancel(ctag);
+
+        System.out.println(topics);
+    }
+
+    private void showTopicMessages(String message) throws IOException, InterruptedException {
         final String corrId = UUID.randomUUID().toString();
         String replyQueueName = channel.queueDeclare().getQueue();
         AMQP.BasicProperties props = new AMQP.BasicProperties

@@ -23,8 +23,8 @@ class User {
 class Topic {
     public String topicName;
     private ArrayList<String> messages = new ArrayList<String>();
-    long timestamp;
-    long duration = 5*60*1000;
+    public long timestamp;
+    public long duration = 5;
 
     public Topic(String topicName, long timestamp){
         this.topicName = topicName;
@@ -34,7 +34,7 @@ class Topic {
     public Topic(String topicName, long timestamp,long duration){
         this.topicName = topicName;
         this.timestamp = timestamp;
-        this.duration = duration * 60*1000;
+        this.duration = duration;
     }
 
     public String toString(){
@@ -65,6 +65,7 @@ public class Server implements AutoCloseable {
     private static final String SEND_TO_TOPIC= "sendMessageToTopic";
     private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
     private static final String GET_TOPIC = "getTopicMessages";
+    private static final String LIST_TOPICS = "listTopics";
 
 
 
@@ -90,6 +91,8 @@ public class Server implements AutoCloseable {
         channel.queuePurge(SEND_TO_TOPIC);
         channel.queueDeclare(GET_TOPIC, false, false, false, null);
         channel.queuePurge(GET_TOPIC);
+        channel.queueDeclare(LIST_TOPICS, false, false, false, null);
+        channel.queuePurge(LIST_TOPICS);
         channel.basicQos(1);
     }
 
@@ -225,9 +228,31 @@ public class Server implements AutoCloseable {
                 }
             };
 
+            Object monitor5 = new Object();
+            DeliverCallback listTopicsCallback = (consumerTag, delivery) -> {
+                AMQP.BasicProperties replyProps = new AMQP.BasicProperties
+                        .Builder()
+                        .correlationId(delivery.getProperties().getCorrelationId())
+                        .build();
+                String response = "";
+                try {
+                    response += server.listTopics();
+                } catch (RuntimeException e) {
+                    System.out.println(" [ERROR] " + e.toString());
+                } finally {
+                    server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
+                    server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                    // RabbitMq consumer worker thread notifies the RPC server owner thread
+                    synchronized (monitor5) {
+                        monitor5.notify();
+                    }
+                }
+            };
+
             server.channel.basicConsume(GET_TOPIC, false, getTopicCallback, consumerTag -> { });
             server.channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
             server.channel.basicConsume(SERVER_QUEUE, false, usernameCallback, consumerTag -> { });
+            server.channel.basicConsume(LIST_TOPICS, false, listTopicsCallback, consumerTag -> { });
             server.channel.basicConsume(SHOW_ONLINE, false, showOnlineCallback, consumerTag -> { });
             server.channel.basicConsume(CREATE_TOPIC, false, createTopicCallback, consumerTag -> { });
             server.channel.basicConsume(SEND_TO_TOPIC, false, writeToTopicCallback, consumerTag -> { });
@@ -263,9 +288,24 @@ public class Server implements AutoCloseable {
                         e.printStackTrace();
                     }
                 }
+                synchronized (monitor5) {
+                    try {
+                        monitor5.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
         }
         
+    }
+
+    private String listTopics(){
+        String result="These are the available topics: \n";
+        for(Topic t : topics){
+            result+=("\t-"+t.topicName+"\n");
+        }
+        return result;
     }
 
     private String getTopicMessages(String message){
