@@ -1,3 +1,5 @@
+
+
 import com.rabbitmq.client.*;
 
 
@@ -23,13 +25,13 @@ public class Client implements AutoCloseable{
     private String username ;
     Timer timer = new Timer();
 
-    private static final String EXCHANGE_ROOM = "generalTopic";
     private static final String EXCHANGE_PRIVATE = "directTopic";
     private static final String SERVER_QUEUE = "serverQueue"; //used to connect to server; verify name uniqueness
     private static final String ONLINE_CHECK = "onlineQueue"; //used to send pings once every 500 ms
     private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
     private static final String SHOW_ONLINE= "showOnline";
     private static final String CREATE_TOPIC= "createTopic";
+    private static final String SEND_TO_TOPIC= "sendMessageToTopic";
 
 
 
@@ -40,7 +42,6 @@ public class Client implements AutoCloseable{
         connection = factory.newConnection();
         channel = connection.createChannel();
 
-        channel.exchangeDeclare(EXCHANGE_ROOM, "topic");
         channel.exchangeDeclare(EXCHANGE_PRIVATE, "direct");
     }
 
@@ -76,7 +77,6 @@ public class Client implements AutoCloseable{
         	String queueName = client.channel.queueDeclare().getQueue(); 
 
         	//Binding queue to our exchanges:
-	        client.channel.queueBind(queueName, EXCHANGE_ROOM, "");
 	        client.channel.queueBind(queueName, EXCHANGE_PRIVATE, client.username);
 
             client.channel.basicConsume(queueName, true, deliverCallback, consumerTag -> { });
@@ -94,16 +94,31 @@ public class Client implements AutoCloseable{
                                 client.sendPrivateMessage(params[2], params[1]);
                             break;
                         case 't':
-                            client.sendCreateTopic(message);
+                            if(message.split(" ",3).length < 2){
+                                System.out.println("Usage: --t <Name> <Duration>");	                        
+                            }else
+                                client.sendCreateTopic(message);
                             break;
                         case 'o':
                             client.getOnlineList(client.username);
                             break;
+                        case 'q':
+                            connected = false;
+                            System.out.println("You disconnected from the chat.");
+                            break;
+                        case 'b':
+                            client.sendToTopic(message);
+                            break;
+                        default:
+                            System.out.println("Unknown command: ");
+                            System.out.println("\t: "+message.split(" ")[0]);
+	                        helpDisplay();
+	                        break;
 
                     }
                 }else{
-                    System.out.println("Unknown command: \n");
-                    System.out.println("\t: "+message.split(" ")[0]+"\n");
+                    System.out.println("Unknown command: ");
+                    System.out.println("\t: "+message.split(" ")[0]);
                     helpDisplay();
                 }
             }
@@ -114,9 +129,15 @@ public class Client implements AutoCloseable{
 
     }
 
-    private void sendCreateTopic(String str)throws IOException, InterruptedException{
+    private void sendToTopic(String message) throws IOException, InterruptedException {
+        channel.basicPublish("", SEND_TO_TOPIC, MessageProperties.PERSISTENT_TEXT_PLAIN,message.getBytes("UTF-8"));
+    }
+
+
+
+
+    private void sendCreateTopic(String str) throws IOException, InterruptedException {
         channel.basicPublish("", CREATE_TOPIC, MessageProperties.PERSISTENT_TEXT_PLAIN,str.getBytes("UTF-8"));
-        
     }
 
     private void getOnlineList(String user) throws IOException, InterruptedException {
@@ -235,9 +256,11 @@ public class Client implements AutoCloseable{
         System.out.println("********************  HELP  ********************");
         System.out.println("***** Timer for topic duration is optional *****");
         System.out.println("*  --o                    : Show online users  *");
-        System.out.println("*  --t <name> <duration>  : Create a topic     *");
-        System.out.println("*  --b <message>          : Broadcast message  *");
         System.out.println("*  --p <name> <message>   : Private message    *");
+        System.out.println("*  --t <name> <duration>  : Create a topic     *");
+        System.out.println("*  --b <topic> <message>  : Write in topic     *");
+        System.out.println("*  --l                    : List of topics     *");
+        System.out.println("*  --s <topic name>       : Get topic messages *");
         System.out.println("*  --q                    : Leave the chat     *");
         System.out.println("************************************************\n");
     }
@@ -246,7 +269,5 @@ public class Client implements AutoCloseable{
         timer.cancel();
         connection.close();
     }
-
-
 
 }

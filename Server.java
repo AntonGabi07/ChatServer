@@ -63,6 +63,8 @@ public class Server implements AutoCloseable {
     private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
     private static final String SHOW_ONLINE= "showOnline";
     private static final String CREATE_TOPIC= "createTopic";
+    private static final String SEND_TO_TOPIC= "sendMessageToTopic";
+
 
 
 
@@ -83,6 +85,8 @@ public class Server implements AutoCloseable {
         channel.queuePurge(SHOW_ONLINE);
         channel.queueDeclare(CREATE_TOPIC, false, false, false, null);
         channel.queuePurge(CREATE_TOPIC);
+        channel.queueDeclare(SEND_TO_TOPIC, false, false, false, null);
+        channel.queuePurge(SEND_TO_TOPIC);
         channel.basicQos(1);
     }
 
@@ -187,10 +191,20 @@ public class Server implements AutoCloseable {
                 }
             };
 
+            DeliverCallback writeToTopicCallback = (consumerTag, delivery) -> {
+                String message = new String(delivery.getBody(), "UTF-8");
+                try {
+                    server.writeToTopic(message);
+                } finally {
+                    server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                }
+            };
+
             server.channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
             server.channel.basicConsume(SERVER_QUEUE, false, usernameCallback, consumerTag -> { });
             server.channel.basicConsume(SHOW_ONLINE, false, showOnlineCallback, consumerTag -> { });
             server.channel.basicConsume(CREATE_TOPIC, false, createTopicCallback, consumerTag -> { });
+            server.channel.basicConsume(SEND_TO_TOPIC, false, writeToTopicCallback, consumerTag -> { });
             server.channel.basicConsume(PRIVATE_CHECK_ONLINE, false, privateCallback, consumerTag -> { });
 
             // Wait and be prepared to consume the message from RPC client.
@@ -219,6 +233,18 @@ public class Server implements AutoCloseable {
             }
         }
         
+    }
+
+    private void writeToTopic(String message){
+        String tName= message.split(" ",3)[1];
+        String tMessage= message.split(" ",3)[2];
+        for(Topic t : topics){
+            if(t.topicName.equals(tName)){
+                t.add(tMessage);
+                return;
+            }
+        }
+        System.out.println("Topic "+tName+" unknown.");
     }
 
     private void createTopic(String arguments){
