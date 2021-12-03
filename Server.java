@@ -38,7 +38,7 @@ class Topic {
     }
 
     public String toString(){
-        String result = "Topic "+topicName + ":\n";
+        String result = "Topic '"+topicName + "':\n";
         for(String s : messages){
             result+= (s+"\n");
         }
@@ -58,12 +58,13 @@ public class Server implements AutoCloseable {
     private static ArrayList<Topic> topics = new ArrayList<Topic>();
     Timer timer = new Timer();
 
-    private static final String SERVER_QUEUE = "serverQueue";
-    private static final String ONLINE_CHECK = "onlineQueue";
-    private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
     private static final String SHOW_ONLINE= "showOnline";
     private static final String CREATE_TOPIC= "createTopic";
+    private static final String SERVER_QUEUE = "serverQueue";
+    private static final String ONLINE_CHECK = "onlineQueue";
     private static final String SEND_TO_TOPIC= "sendMessageToTopic";
+    private static final String PRIVATE_CHECK_ONLINE = "checkOnlineStatus";
+    private static final String GET_TOPIC = "getTopicMessages";
 
 
 
@@ -87,6 +88,8 @@ public class Server implements AutoCloseable {
         channel.queuePurge(CREATE_TOPIC);
         channel.queueDeclare(SEND_TO_TOPIC, false, false, false, null);
         channel.queuePurge(SEND_TO_TOPIC);
+        channel.queueDeclare(GET_TOPIC, false, false, false, null);
+        channel.queuePurge(GET_TOPIC);
         channel.basicQos(1);
     }
 
@@ -200,6 +203,29 @@ public class Server implements AutoCloseable {
                 }
             };
 
+            Object monitor4 = new Object();
+            DeliverCallback getTopicCallback = (consumerTag, delivery) -> {
+                AMQP.BasicProperties replyProps = new AMQP.BasicProperties
+                        .Builder()
+                        .correlationId(delivery.getProperties().getCorrelationId())
+                        .build();
+                String response = "";
+                try {
+                    String message = new String(delivery.getBody(), "UTF-8");
+                    response += server.getTopicMessages(message);
+                } catch (RuntimeException e) {
+                    System.out.println(" [ERROR] " + e.toString());
+                } finally {
+                    server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
+                    server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                    // RabbitMq consumer worker thread notifies the RPC server owner thread
+                    synchronized (monitor4) {
+                        monitor4.notify();
+                    }
+                }
+            };
+
+            server.channel.basicConsume(GET_TOPIC, false, getTopicCallback, consumerTag -> { });
             server.channel.basicConsume(ONLINE_CHECK, false, onlineCallback, consumerTag -> { });
             server.channel.basicConsume(SERVER_QUEUE, false, usernameCallback, consumerTag -> { });
             server.channel.basicConsume(SHOW_ONLINE, false, showOnlineCallback, consumerTag -> { });
@@ -230,21 +256,37 @@ public class Server implements AutoCloseable {
                         e.printStackTrace();
                     }
                 }
+                synchronized (monitor4) {
+                    try {
+                        monitor4.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
         }
         
     }
 
+    private String getTopicMessages(String message){
+        String topicName = message.split(" ",2)[1];
+        for(Topic t: topics){
+            if(t.topicName.equals(topicName)){
+                return t.toString();
+            }
+        }
+        return "There is no topic named "+topicName+".";
+    }
+
     private void writeToTopic(String message){
-        String tName= message.split(" ",3)[1];
-        String tMessage= message.split(" ",3)[2];
+        String[] params = message.split(" ",3);
         for(Topic t : topics){
-            if(t.topicName.equals(tName)){
-                t.add(tMessage);
+            if(t.topicName.equals(params[1])){
+                t.add(params[0] + " said: " +params[2]);
                 return;
             }
         }
-        System.out.println("Topic "+tName+" unknown.");
+        System.out.println("Topic "+params[1]+" unknown.");
     }
 
     private void createTopic(String arguments){

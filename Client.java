@@ -32,6 +32,8 @@ public class Client implements AutoCloseable{
     private static final String SHOW_ONLINE= "showOnline";
     private static final String CREATE_TOPIC= "createTopic";
     private static final String SEND_TO_TOPIC= "sendMessageToTopic";
+    private static final String GET_TOPIC = "getTopicMessages";
+
 
 
 
@@ -107,7 +109,14 @@ public class Client implements AutoCloseable{
                             System.out.println("You disconnected from the chat.");
                             break;
                         case 'b':
-                            client.sendToTopic(message);
+                            String[] str = message.split(" ",3);
+                            if(str.length < 3){
+                                System.out.println("Usage: --b <Topic> <Message>");	                        
+                            }else
+                                client.sendToTopic(str[1]+" "+str[2]);
+                            break;
+                        case 's':
+                            client.showTopicMessages(message);
                             break;
                         default:
                             System.out.println("Unknown command: ");
@@ -129,8 +138,37 @@ public class Client implements AutoCloseable{
 
     }
 
+    private void showTopicMessages(String message)  throws IOException, InterruptedException {
+        final String corrId = UUID.randomUUID().toString();
+        String replyQueueName = channel.queueDeclare().getQueue();
+        AMQP.BasicProperties props = new AMQP.BasicProperties
+                .Builder()
+                .correlationId(corrId)
+                .replyTo(replyQueueName)
+                .build();
+        channel.basicPublish("", GET_TOPIC, props, message.getBytes("UTF-8"));
+
+        final BlockingQueue<String> response = new ArrayBlockingQueue<>(1);
+
+        String ctag = channel.basicConsume(replyQueueName, true, (consumerTag, delivery) -> {
+            if (delivery.getProperties().getCorrelationId().equals(corrId)) {
+                response.offer(new String(delivery.getBody(), "UTF-8"));
+            }
+        }, consumerTag -> {
+        });
+
+        String topicMessages = response.take();
+        channel.basicCancel(ctag);
+
+        System.out.println(topicMessages);
+    }
+
+
+
+
     private void sendToTopic(String message) throws IOException, InterruptedException {
-        channel.basicPublish("", SEND_TO_TOPIC, MessageProperties.PERSISTENT_TEXT_PLAIN,message.getBytes("UTF-8"));
+        String finalMessage = username+" "+message;
+        channel.basicPublish("", SEND_TO_TOPIC, MessageProperties.PERSISTENT_TEXT_PLAIN,finalMessage.getBytes("UTF-8"));
     }
 
 
