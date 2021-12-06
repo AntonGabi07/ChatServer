@@ -23,18 +23,9 @@ class User {
 class Topic {
     public String topicName;
     private ArrayList<String> messages = new ArrayList<String>();
-    public long timestamp;
-    public long duration = 5;
 
-    public Topic(String topicName, long timestamp){
+    public Topic(String topicName){
         this.topicName = topicName;
-        this.timestamp = timestamp;
-    }
-
-    public Topic(String topicName, long timestamp,long duration){
-        this.topicName = topicName;
-        this.timestamp = timestamp;
-        this.duration = duration;
     }
 
     public String toString(){
@@ -105,7 +96,6 @@ public class Server implements AutoCloseable {
             server.timer.scheduleAtFixedRate(new TimerTask() {
                 @Override
                 public void run() {
-                    System.out.println("Hello "+System.currentTimeMillis()+".");
                     server.verifyUsersStatus();
                 }
             },0, 1000);
@@ -337,13 +327,36 @@ public class Server implements AutoCloseable {
                 return;
             }
         }
-        if(args.length == 3){
-            topics.add(new Topic(args[1],System.currentTimeMillis(),Integer.valueOf(args[2])));
-        }else if(args.length == 2){
-            topics.add(new Topic(args[1],System.currentTimeMillis()));
-        }
+        topics.add(new Topic(args[1]));
         System.out.println("Created a topic named " + args[1]+".");
+        if(args.length == 3){
+            timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    System.out.println("Destroying topic: "+args[1]+".");
+                    destoryTopic(args[1]);
+                }
+            },Integer.parseInt(args[2])*60*1000);
+        }else if(args.length == 2){
+            timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    System.out.println("Destroying topic: "+args[1]+".");
+                    destoryTopic(args[1]);
+                }
+            },5*60*1000);
+        }
     }
+
+    protected void destoryTopic(String tName) {
+        for(Topic t : topics){
+            if(t.topicName.equals(tName)){
+                topics.remove(t);
+                break;
+            }
+        }
+    }
+
 
     protected void verifyUsersStatus() {
         for(User u : userList)
@@ -388,7 +401,6 @@ public class Server implements AutoCloseable {
         for(User u : userList){
             if(u.username.equals(username)){
                 u.timestamp = currentTime;
-                System.out.println("My name is "+u.username+" / "+u.timestamp);
                 break;
             }
         }

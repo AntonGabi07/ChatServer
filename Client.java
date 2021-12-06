@@ -1,5 +1,3 @@
-
-
 import com.rabbitmq.client.*;
 
 
