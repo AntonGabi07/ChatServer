@@ -1,3 +1,5 @@
+
+
 import com.rabbitmq.client.*;
 
 
@@ -189,7 +191,30 @@ public class Client implements AutoCloseable{
 
     private void sendToTopic(String message) throws IOException, InterruptedException {
         String finalMessage = username+" "+message;
-        channel.basicPublish("", SEND_TO_TOPIC, MessageProperties.PERSISTENT_TEXT_PLAIN,finalMessage.getBytes("UTF-8"));
+        final String corrId = UUID.randomUUID().toString();
+        String replyQueueName = channel.queueDeclare().getQueue();
+        AMQP.BasicProperties props = new AMQP.BasicProperties
+                .Builder()
+                .correlationId(corrId)
+                .replyTo(replyQueueName)
+                .build();
+        channel.basicPublish("", SEND_TO_TOPIC, props, finalMessage.getBytes("UTF-8"));
+
+        final BlockingQueue<String> response = new ArrayBlockingQueue<>(1);
+
+        String ctag = channel.basicConsume(replyQueueName, true, (consumerTag, delivery) -> {
+            if (delivery.getProperties().getCorrelationId().equals(corrId)) {
+                response.offer(new String(delivery.getBody(), "UTF-8"));
+            }
+        }, consumerTag -> {
+        });
+
+        String topicExists = response.take();
+        channel.basicCancel(ctag);
+
+        if(topicExists.equals("false")){
+            System.out.println("Topic does not exist.");
+        }
     }
 
 

@@ -5,6 +5,7 @@ import com.rabbitmq.client.impl.recovery.AutorecoveringChannel;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeoutException;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -45,8 +46,8 @@ public class Server implements AutoCloseable {
 
     private Connection connection;
     private Channel channel;
-    private static ArrayList<User> userList = new ArrayList<User>();
-    private static ArrayList<Topic> topics = new ArrayList<Topic>();
+    private static CopyOnWriteArrayList<User> userList = new CopyOnWriteArrayList<User>();
+    private static CopyOnWriteArrayList<Topic> topics = new CopyOnWriteArrayList<Topic>();
     Timer timer = new Timer();
 
     private static final String SHOW_ONLINE= "showOnline";
@@ -101,7 +102,6 @@ public class Server implements AutoCloseable {
             },0, 1000);
 
 
-            Object monitor1 = new Object();
             DeliverCallback usernameCallback = (consumerTag, delivery) -> {
                 AMQP.BasicProperties replyProps = new AMQP.BasicProperties
                         .Builder()
@@ -117,14 +117,9 @@ public class Server implements AutoCloseable {
                 } finally {
                     server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
                     server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-                    // RabbitMq consumer worker thread notifies the RPC server owner thread
-                    synchronized (monitor1) {
-                        monitor1.notify();
-                    }
                 }
             };
 
-            Object monitor2 = new Object();
             DeliverCallback privateCallback = (consumerTag, delivery) -> {
                 AMQP.BasicProperties replyProps = new AMQP.BasicProperties
                         .Builder()
@@ -133,17 +128,12 @@ public class Server implements AutoCloseable {
                 String response = "";
                 try {
                     String username = new String(delivery.getBody(), "UTF-8");
-                    System.out.println("[PRIVATE] "+ username + " status");
                     response += server.verifyStatus(username);
                 } catch (RuntimeException e) {
                     System.out.println(" [ERROR] " + e.toString());
                 } finally {
                     server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
                     server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-                    // RabbitMq consumer worker thread notifies the RPC server owner thread
-                    synchronized (monitor2) {
-                        monitor2.notify();
-                    }
                 }
             };
 
@@ -156,7 +146,6 @@ public class Server implements AutoCloseable {
                 }
             };
 
-            Object monitor3 = new Object();
             DeliverCallback showOnlineCallback = (consumerTag, delivery) -> {
                 AMQP.BasicProperties replyProps = new AMQP.BasicProperties
                         .Builder()
@@ -171,10 +160,6 @@ public class Server implements AutoCloseable {
                 } finally {
                     server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
                     server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-                    // RabbitMq consumer worker thread notifies the RPC server owner thread
-                    synchronized (monitor3) {
-                        monitor3.notify();
-                    }
                 }
             };
 
@@ -188,15 +173,22 @@ public class Server implements AutoCloseable {
             };
 
             DeliverCallback writeToTopicCallback = (consumerTag, delivery) -> {
-                String message = new String(delivery.getBody(), "UTF-8");
+                AMQP.BasicProperties replyProps = new AMQP.BasicProperties
+                .Builder()
+                .correlationId(delivery.getProperties().getCorrelationId())
+                .build();
+                String response = "";
                 try {
-                    server.writeToTopic(message);
+                    String message = new String(delivery.getBody(), "UTF-8");
+                    response += server.writeToTopic(message);
+                } catch (RuntimeException e) {
+                    System.out.println(" [ERROR] " + e.toString());
                 } finally {
+                    server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
                     server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
                 }
             };
 
-            Object monitor4 = new Object();
             DeliverCallback getTopicCallback = (consumerTag, delivery) -> {
                 AMQP.BasicProperties replyProps = new AMQP.BasicProperties
                         .Builder()
@@ -211,14 +203,9 @@ public class Server implements AutoCloseable {
                 } finally {
                     server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
                     server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-                    // RabbitMq consumer worker thread notifies the RPC server owner thread
-                    synchronized (monitor4) {
-                        monitor4.notify();
-                    }
                 }
             };
 
-            Object monitor5 = new Object();
             DeliverCallback listTopicsCallback = (consumerTag, delivery) -> {
                 AMQP.BasicProperties replyProps = new AMQP.BasicProperties
                         .Builder()
@@ -232,10 +219,6 @@ public class Server implements AutoCloseable {
                 } finally {
                     server.channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
                     server.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-                    // RabbitMq consumer worker thread notifies the RPC server owner thread
-                    synchronized (monitor5) {
-                        monitor5.notify();
-                    }
                 }
             };
 
@@ -250,41 +233,6 @@ public class Server implements AutoCloseable {
 
             // Wait and be prepared to consume the message from RPC client.
             while (true) {
-                synchronized (monitor1) {
-                    try {
-                        monitor1.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-                synchronized (monitor2) {
-                    try {
-                        monitor2.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-                synchronized (monitor3) {
-                    try {
-                        monitor3.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-                synchronized (monitor4) {
-                    try {
-                        monitor4.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-                synchronized (monitor5) {
-                    try {
-                        monitor5.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
             }
         }
         
@@ -308,15 +256,15 @@ public class Server implements AutoCloseable {
         return "There is no topic named "+topicName+".";
     }
 
-    private void writeToTopic(String message){
+    private String writeToTopic(String message){
         String[] params = message.split(" ",3);
         for(Topic t : topics){
             if(t.topicName.equals(params[1])){
                 t.add(params[0] + " said: " +params[2]);
-                return;
+                return "true";
             }
         }
-        System.out.println("Topic "+params[1]+" unknown.");
+        return "false";
     }
 
     private void createTopic(String arguments){
