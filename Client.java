@@ -111,7 +111,10 @@ public class Client implements AutoCloseable{
                                 client.sendToTopic(str[1]+" "+str[2]);
                             break;
                         case 's':
-                            client.showTopicMessages(message);
+                            if(message.split(" ",2).length < 2){
+                                System.out.println("Usage: --s <Topic Name>");	                        
+                            }else
+                            	client.showTopicMessages(message);
                             break;
                         case 'l':
                             client.listTopics();

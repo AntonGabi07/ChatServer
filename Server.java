@@ -4,22 +4,11 @@ import com.rabbitmq.client.impl.recovery.AutorecoveringChannel;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeoutException;
-import java.util.Timer;
-import java.util.TimerTask;
 
-
-class User {
-    public String username;
-    public long timestamp;
-
-    User(String username, long timestamp){
-        this.username=username;
-        this.timestamp=timestamp;
-    }
-}
 
 class Topic {
     public String topicName;
@@ -43,11 +32,11 @@ class Topic {
 }
 
 public class Server implements AutoCloseable {
-
+    private static Integer i = new Integer(1);
     private Connection connection;
     private Channel channel;
-    private static CopyOnWriteArrayList<User> userList = new CopyOnWriteArrayList<User>();
-    private static CopyOnWriteArrayList<Topic> topics = new CopyOnWriteArrayList<Topic>();
+    private static ConcurrentHashMap<String, Long> userList = new ConcurrentHashMap<>();
+    ConcurrentHashMap<Integer, Topic> topics = new ConcurrentHashMap<>();
     Timer timer = new Timer();
 
     private static final String SHOW_ONLINE= "showOnline";
@@ -240,42 +229,64 @@ public class Server implements AutoCloseable {
 
     private String listTopics(){
         String result="These are the available topics: \n";
-        for(Topic t : topics){
-            result+=("\t-"+t.topicName+"\n");
+        Iterator<ConcurrentHashMap.Entry<Integer, Topic> >
+                itr = topics.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<Integer, Topic> entry
+                    = itr.next();
+            result+=("\t-"+entry.getValue().topicName+"\n");
+
         }
         return result;
     }
 
     private String getTopicMessages(String message){
         String topicName = message.split(" ",2)[1];
-        for(Topic t: topics){
-            if(t.topicName.equals(topicName)){
-                return t.toString();
+        Iterator<ConcurrentHashMap.Entry<Integer, Topic> >
+                itr = topics.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<Integer, Topic> entry
+                    = itr.next();
+            if(entry.getValue().topicName.equals(topicName)){
+                return entry.getValue().toString();
             }
+
         }
         return "There is no topic named "+topicName+".";
     }
 
     private String writeToTopic(String message){
         String[] params = message.split(" ",3);
-        for(Topic t : topics){
-            if(t.topicName.equals(params[1])){
-                t.add(params[0] + " said: " +params[2]);
+        Iterator<ConcurrentHashMap.Entry<Integer, Topic> >
+                itr = topics.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<Integer, Topic> entry
+                    = itr.next();
+            if(entry.getValue().topicName.equals(params[1])){
+                entry.getValue().add(params[0] + " said: " +params[2]);
                 return "true";
             }
+
         }
         return "false";
     }
 
     private void createTopic(String arguments){
         String[] args = arguments.split(" ",3);
-        for(Topic t : topics){
-            if(t.topicName.equals(args[1])){
+        Iterator<ConcurrentHashMap.Entry<Integer, Topic> >
+                itr = topics.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<Integer, Topic> entry
+                    = itr.next();
+            if(entry.getValue().topicName.equals(args[1])){
                 System.out.println("Topic " +args[1]+ " exists.");
                 return;
             }
+
         }
-        topics.add(new Topic(args[1]));
+        Topic t = new Topic(args[1]);
+        topics.put(Server.i,t);
+        Server.i = Server.i + 1;
         System.out.println("Created a topic named " + args[1]+".");
         if(args.length == 3){
             timer.schedule(new TimerTask() {
@@ -297,47 +308,68 @@ public class Server implements AutoCloseable {
     }
 
     protected void destoryTopic(String tName) {
-        for(Topic t : topics){
-            if(t.topicName.equals(tName)){
-                topics.remove(t);
+        Iterator<ConcurrentHashMap.Entry<Integer, Topic> >
+                itr = topics.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<Integer, Topic> entry
+                    = itr.next();
+            if(entry.getValue().topicName.equals(tName)){
+                topics.remove(entry.getKey());
                 break;
             }
+
         }
+
     }
 
 
     protected void verifyUsersStatus() {
-        for(User u : userList)
-            if(System.currentTimeMillis()-u.timestamp > 1000){
-                userList.remove(u);
+        Iterator<ConcurrentHashMap.Entry<String, Long> >
+                itr = userList.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<String, Long> entry
+                    = itr.next();
+            if(System.currentTimeMillis()-entry.getValue() > 1000){
+                userList.remove(entry.getKey());
                 break;
             }
+
+        }
     }
 
 
     private String verifyUser(String username){
 	Boolean verify=false;
-	for(User u : userList){
-            if(u.username.equals(username)){
+        Iterator<ConcurrentHashMap.Entry<String, Long> >
+                itr = userList.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<String, Long> entry
+                    = itr.next();
+            if(entry.getKey().equals(username)){
                 verify=true;
-		break;
+                break;
             }
-	}
-       
+
+        }
         if(verify){
             return "false";
         }
-        userList.add(new User(username,System.currentTimeMillis()));
+        userList.put(username,System.currentTimeMillis());
         return "true";
     }
 
     private String verifyStatus(String username){
         Boolean verify=false;
-        for(User u: userList){
-            if(u.username.equals(username)){
+        Iterator<ConcurrentHashMap.Entry<String, Long> >
+                itr = userList.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<String, Long> entry
+                    = itr.next();
+            if(entry.getKey().equals(username)){
                 verify=true;
                 break;
             }
+
         }
         if(verify)
             return "true";
@@ -345,19 +377,31 @@ public class Server implements AutoCloseable {
     }
 
     private static void updateStatus(String username) {
-        long currentTime = System.currentTimeMillis();
-        for(User u : userList){
-            if(u.username.equals(username)){
-                u.timestamp = currentTime;
+        Long currentTime = System.currentTimeMillis();
+        Iterator<ConcurrentHashMap.Entry<String, Long> >
+                itr = userList.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<String, Long> entry
+                    = itr.next();
+            if(entry.getKey().equals(username)){
+                entry.setValue(currentTime);
                 break;
             }
+
         }
     }
 
     private static String getOnlineList(String user){
         String usersOnline = "These are the online users:\n";
-        for(User u : userList){
-            usersOnline+=("\t"+(u.username.equals(user)?"You":u.username)+"\n");
+        Iterator<ConcurrentHashMap.Entry<String, Long> >
+                itr = userList.entrySet().iterator();
+        while (itr.hasNext()) {
+            ConcurrentHashMap.Entry<String, Long> entry
+                    = itr.next();
+
+                usersOnline+=("\t"+(entry.getKey().equals(user)?"You":entry.getKey())+"\n");
+
+
         }
         return usersOnline;
     }
